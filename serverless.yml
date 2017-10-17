@@ -1,0 +1,118 @@
+service: emojinate
+
+custom:
+  stage: ${opt:stage, self:provider.stage}
+  rootDomain: emojinate.io
+  devDomains:
+    - test.emojinate.io
+  prodDomains:
+    - www.emojinate.io
+    - emojinate.io
+  devCognitoPool: 'arn:aws:cognito-idp:us-east-1:219144307484:userpool/us-east-1_puwZ9vSlK'
+  prodCognitoPool: 'arn:aws:cognito-idp:us-east-1:219144307484:userpool/us-east-1_DuUBz2vSh'
+
+provider:
+  name: aws
+  region: us-east-1
+  runtime: nodejs6.10
+  environment:
+    STORIES_TABLE: {Ref: StoriesDB}
+  iamRoleStatements:
+    - Effect: Allow
+      Resource:
+        - "Fn::Join":
+            - ""
+            -
+              - "arn:aws:dynamodb:"
+              - {Ref: "AWS::Region"}
+              - ":"
+              - {Ref: "AWS::AccountId"}
+              - ":table/"
+              - Ref: StoriesDB
+        - "Fn::Join":
+            - ""
+            -
+              - "arn:aws:dynamodb:"
+              - {Ref: "AWS::Region"}
+              - ":"
+              - {Ref: "AWS::AccountId"}
+              - ":table/"
+              - Ref: StoriesDB
+              - '/index/*'
+      Action:
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:Scan
+        - dynamodb:Query
+
+functions:
+  gql:
+    handler: handlers/graphql.graphqlHandler
+    events:
+      - http:
+          cors: true
+          path: /graphql
+          method: post
+          authorizer:
+            arn: ${self:custom.${self:custom.stage}CognitoPool}
+  gqlInspector:
+    handler: handlers/graphql.graphiqlHandler
+    events:
+      - http:
+          cors: true
+          path: /graphiql
+          method: get
+
+resources:
+  Mappings: ${file(resources/mappings.yml)}
+  Outputs: ${file(resources/outputs.yml)}
+  Resources:
+    WebSite:
+      Type: "AWS::S3::Bucket"
+      Properties:
+        WebsiteConfiguration:
+          ErrorDocument: index.html
+          IndexDocument: index.html
+    StoriesDB: ${file(resources/story-db.yml)}
+    DnsRecords: ${file(resources/${self:custom.stage}-dns.yml)}
+    SSLCert: ${file(resources/${self:custom.stage}-ssl.yml)}
+    CDN:
+      Type: "AWS::CloudFront::Distribution"
+      Properties:
+        DistributionConfig:
+          ViewerCertificate:
+            AcmCertificateArn: {Ref: SSLCert}
+            SslSupportMethod: sni-only
+          Enabled: true
+          HttpVersion: http2
+          Aliases: ${self:custom.${self:custom.stage}Domains}
+          DefaultRootObject: index.html
+          Origins:
+            - DomainName: {"Fn::Join": ["", [{Ref: WebSite}, ".", {"Fn::FindInMap": [RegionMap, {Ref: "AWS::Region"}, websiteendpoint]}]]}
+              Id: S3Origin
+              CustomOriginConfig:
+                HTTPPort: 80
+                HTTPSPort: 443
+                OriginProtocolPolicy: http-only
+          DefaultCacheBehavior:
+            ViewerProtocolPolicy: allow-all
+            TargetOriginId: S3Origin
+            AllowedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            DefaultTTL: 30
+            MinTTL: 10
+            ForwardedValues:
+              QueryString: true
+
+package:
+  exclude:
+    - client/**
+    - bin/**
+    - resources/**
+    - .git/**
+    - .gitignore
+    - package.JSON

@@ -1,0 +1,28 @@
+---
+Type: "AWS::DynamoDB::Table"
+Properties:
+  AttributeDefinitions:
+    - AttributeName: id
+      AttributeType: S
+    - AttributeName: author_id
+      AttributeType: S
+    - AttributeName: posted_at
+      AttributeType: N
+  KeySchema:
+    - AttributeName: id
+      KeyType: HASH
+  ProvisionedThroughput:
+    ReadCapacityUnits: 1
+    WriteCapacityUnits: 1
+  GlobalSecondaryIndexes:
+    - IndexName: author_x_posted
+      KeySchema:
+        - AttributeName: author_id
+          KeyType: HASH
+        - AttributeName: posted_at
+          KeyType: RANGE
+      Projection:
+        ProjectionType: ALL
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
